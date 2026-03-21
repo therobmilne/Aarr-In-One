@@ -1,7 +1,6 @@
 services:
   mediaforge:
     build: .
-    image: mediaforge:latest
     container_name: mediaforge
     cap_add:
       - NET_ADMIN
@@ -9,52 +8,19 @@ services:
       - /dev/net/tun:/dev/net/tun
     ports:
       - "8686:8686"
-    env_file:
-      - .env
     environment:
-      - DATABASE_URL=postgresql+asyncpg://mediaforge:${POSTGRES_PASSWORD:-mediaforge}@db:5432/mediaforge
-      - REDIS_URL=redis://redis:6379/0
-      - VPN_CONFIG_PATH=/config/vpn/wg0.conf
+      - TZ=America/Toronto
+      - PUID=1000
+      - PGID=1000
+      - SECRET_KEY=change-me-run-openssl-rand-hex-32
+      - JELLYFIN_URL=http://192.168.2.50:8096
+      - JELLYFIN_API_KEY=
+      - TMDB_API_KEY=
+      - VPN_PROVIDER=
+      - VPN_TYPE=wireguard
+      - LOG_LEVEL=INFO
     volumes:
       - ./config:/config
-      # *** UPDATE THESE PATHS to match YOUR Proxmox storage ***
-      - /mnt/media:/media          # Same path Jellyfin uses
-      - /mnt/downloads:/downloads  # Torrent/usenet staging area
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+      - /mnt/media:/media
+      - /mnt/downloads:/downloads
     restart: unless-stopped
-
-  db:
-    image: postgres:16-alpine
-    container_name: mediaforge-db
-    environment:
-      - POSTGRES_USER=mediaforge
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-mediaforge}
-      - POSTGRES_DB=mediaforge
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U mediaforge"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
-
-  redis:
-    image: redis:7-alpine
-    container_name: mediaforge-redis
-    volumes:
-      - redisdata:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
-
-volumes:
-  pgdata:
-  redisdata:
