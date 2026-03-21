@@ -18,6 +18,7 @@ from backend.exceptions import (
 )
 from backend.logging_config import get_logger, request_id_var, setup_logging
 from backend.modules.discovery.router import router as discovery_router
+from backend.modules.setup.router import router as setup_router
 from backend.modules.downloads.router import router as downloads_router
 from backend.modules.indexers.router import router as indexers_router
 from backend.modules.livetv.hdhr_emulation import router as hdhr_router
@@ -122,6 +123,7 @@ def create_app() -> FastAPI:
 
     # API Routers
     api_prefix = "/api/v1"
+    app.include_router(setup_router, prefix=api_prefix)
     app.include_router(auth_router, prefix=api_prefix)
     app.include_router(discovery_router, prefix=api_prefix)
     app.include_router(movies_router, prefix=api_prefix)
