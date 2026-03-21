@@ -8,6 +8,7 @@ python-multipart>=0.0.12
 sqlalchemy[asyncio]>=2.0.35
 aiosqlite>=0.20.0
 alembic>=1.14.0
+greenlet>=3.0.0
 
 # HTTP client
 httpx>=0.28.0

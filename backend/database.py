@@ -35,6 +35,13 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 async def init_db() -> None:
     """Create tables if using SQLite (for quick dev). Alembic handles migrations in production."""
     if not settings.is_postgres:
+        # Ensure the SQLite directory exists
+        import os
+        db_url = settings.DATABASE_URL
+        if ":///" in db_url:
+            db_path = db_url.split(":///", 1)[1]
+            os.makedirs(os.path.dirname(db_path) or ".", exist_ok=True)
+
         from backend.models.base import Base  # noqa: F811
 
         async with engine.begin() as conn:

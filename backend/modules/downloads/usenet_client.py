@@ -2,9 +2,7 @@
 
 import asyncio
 import hashlib
-import nntplib
 import os
-import ssl
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -12,6 +10,12 @@ from typing import Any
 
 from backend.config import settings
 from backend.logging_config import get_logger
+
+try:
+    import nntplib  # Removed in Python 3.13, deprecated in 3.12
+    HAS_NNTPLIB = True
+except ImportError:
+    HAS_NNTPLIB = False
 
 logger = get_logger("usenet")
 
