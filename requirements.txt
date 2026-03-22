@@ -37,3 +37,6 @@ celery[redis]>=5.4.0
 
 # Subtitle engine (optional, degrades gracefully if missing)
 subliminal>=2.2.1
+
+# Cloudflare bypass (optional, degrades gracefully if missing)
+playwright>=1.49.0

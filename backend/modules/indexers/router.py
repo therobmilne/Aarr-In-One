@@ -64,3 +64,10 @@ async def search_indexers(
 ):
     cats = [int(c) for c in categories.split(",")] if categories else None
     return await service.search_all_indexers(db, q, cats, imdb_id, tvdb_id)
+
+
+@router.get("/bypass/status")
+async def cloudflare_bypass_status(user: User = Depends(require_power_user)):
+    """Check Cloudflare bypass engine status."""
+    from backend.modules.indexers.cloudflare_bypass import get_cache_status
+    return get_cache_status()

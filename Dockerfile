@@ -27,6 +27,9 @@ WORKDIR /app
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Install Playwright's Chromium browser (for Cloudflare bypass)
+RUN playwright install --with-deps chromium 2>/dev/null || echo "Playwright browser install skipped"
+
 COPY backend/ ./backend/
 COPY alembic.ini ./
 COPY scripts/ ./scripts/

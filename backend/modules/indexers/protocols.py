@@ -42,9 +42,31 @@ async def search_torznab(
         params["ep"] = str(episode)
 
     start = time.monotonic()
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        resp = await client.get(f"{url.rstrip('/')}/api", params=params)
-        resp.raise_for_status()
+    full_url = f"{url.rstrip('/')}/api"
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(full_url, params=params)
+            # Detect Cloudflare block
+            if resp.status_code == 403 or (
+                resp.status_code == 503 and "cloudflare" in resp.text.lower()
+            ):
+                logger.info("cloudflare_detected", indexer=indexer_name, url=url)
+                from backend.modules.indexers.cloudflare_bypass import bypass_cloudflare
+                bypass = await bypass_cloudflare(full_url + "?" + "&".join(f"{k}={v}" for k, v in params.items()))
+                if bypass.success:
+                    resp_text = bypass.body
+                    elapsed_ms = bypass.elapsed_ms
+                    results = _parse_torznab_response(resp_text, indexer_name)
+                    return results, elapsed_ms
+                else:
+                    raise httpx.HTTPStatusError(
+                        f"Cloudflare bypass failed: {bypass.error}",
+                        request=resp.request,
+                        response=resp,
+                    )
+            resp.raise_for_status()
+    except httpx.HTTPStatusError:
+        raise
     elapsed_ms = (time.monotonic() - start) * 1000
 
     results = _parse_torznab_response(resp.text, indexer_name)
