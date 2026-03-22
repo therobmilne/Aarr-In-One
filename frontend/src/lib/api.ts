@@ -14,14 +14,18 @@ api.interceptors.request.use((config) => {
   return config
 })
 
-// Response interceptor: handle 401
+// Response interceptor: handle 401 (but don't redirect if already on a page)
 api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      localStorage.removeItem('mediaforge_token')
-      localStorage.removeItem('mediaforge_user')
-      window.location.href = '/login'
+      // Only redirect to login if we're not on setup/login pages
+      // and don't redirect for background API calls (settings loading, etc.)
+      const path = window.location.pathname
+      if (path !== '/login' && path !== '/setup') {
+        // Don't auto-redirect - let the component handle the error
+        // This prevents settings pages from losing state on transient 401s
+      }
     }
     return Promise.reject(error)
   }

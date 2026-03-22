@@ -15,7 +15,7 @@ from backend.modules.indexers.schemas import (
 router = APIRouter(prefix="/indexers", tags=["indexers"])
 
 
-@router.get("/", response_model=list[IndexerResponse])
+@router.get("", response_model=list[IndexerResponse])
 async def list_indexers(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_power_user),
@@ -24,7 +24,7 @@ async def list_indexers(
     return [IndexerResponse.model_validate(i) for i in indexers]
 
 
-@router.post("/", response_model=IndexerResponse, status_code=201)
+@router.post("", response_model=IndexerResponse, status_code=201)
 async def add_indexer(
     body: IndexerCreate,
     db: AsyncSession = Depends(get_db),

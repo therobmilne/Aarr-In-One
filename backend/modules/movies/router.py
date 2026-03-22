@@ -12,7 +12,7 @@ from backend.modules.movies.schemas import MovieCreate, MovieResponse
 router = APIRouter(prefix="/movies", tags=["movies"])
 
 
-@router.get("/", response_model=list[MovieResponse])
+@router.get("", response_model=list[MovieResponse])
 async def list_movies(
     status: MediaStatus | None = None,
     monitored: bool | None = None,
@@ -25,7 +25,7 @@ async def list_movies(
     return [MovieResponse.model_validate(m) for m in movies]
 
 
-@router.post("/", response_model=MovieResponse, status_code=201)
+@router.post("", response_model=MovieResponse, status_code=201)
 async def add_movie(
     body: MovieCreate,
     db: AsyncSession = Depends(get_db),

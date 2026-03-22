@@ -11,7 +11,7 @@ from backend.modules.downloads.schemas import DownloadCreate, DownloadResponse, 
 router = APIRouter(prefix="/downloads", tags=["downloads"])
 
 
-@router.get("/", response_model=list[DownloadResponse])
+@router.get("", response_model=list[DownloadResponse])
 async def list_downloads(
     status: DownloadStatus | None = None,
     limit: int = 50,
@@ -22,7 +22,7 @@ async def list_downloads(
     return [DownloadResponse.model_validate(d) for d in downloads]
 
 
-@router.post("/", response_model=DownloadResponse, status_code=201)
+@router.post("", response_model=DownloadResponse, status_code=201)
 async def add_download(
     body: DownloadCreate,
     db: AsyncSession = Depends(get_db),

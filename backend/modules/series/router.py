@@ -10,7 +10,7 @@ from backend.modules.series.schemas import EpisodeResponse, SeriesCreate, Series
 router = APIRouter(prefix="/series", tags=["series"])
 
 
-@router.get("/", response_model=list[SeriesResponse])
+@router.get("", response_model=list[SeriesResponse])
 async def list_series(
     monitored: bool | None = None,
     limit: int = 50,
@@ -22,7 +22,7 @@ async def list_series(
     return [SeriesResponse.model_validate(s) for s in items]
 
 
-@router.post("/", response_model=SeriesResponse, status_code=201)
+@router.post("", response_model=SeriesResponse, status_code=201)
 async def add_series(
     body: SeriesCreate,
     db: AsyncSession = Depends(get_db),

@@ -110,6 +110,7 @@ def create_app() -> FastAPI:
         docs_url="/api/docs",
         redoc_url="/api/redoc",
         openapi_url="/api/openapi.json",
+        redirect_slashes=False,  # Don't redirect POST /indexers to /indexers/ (causes 405)
     )
 
     # CORS
@@ -180,10 +181,17 @@ def create_app() -> FastAPI:
         # Serve static assets (js, css, images)
         app.mount("/assets", StaticFiles(directory=str(frontend_dist / "assets")), name="static-assets")
 
-        # Serve other static files at root (favicon, logo, etc)
         from fastapi.responses import FileResponse
 
         index_html = frontend_dist / "index.html"
+
+        # Add no-cache header to index.html so browser always gets fresh JS references
+        @app.get("/")
+        async def root_page():
+            return FileResponse(
+                str(index_html),
+                headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+            )
 
         @app.get("/mediaforge-logo.svg")
         async def logo():
