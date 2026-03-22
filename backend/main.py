@@ -57,6 +57,11 @@ async def lifespan(app: FastAPI):
     except Exception:
         pass
 
+    # Check frontend
+    frontend_path = Path(__file__).parent.parent / "frontend" / "dist"
+    has_frontend = frontend_path.exists() and (frontend_path / "index.html").exists()
+    logger.info("frontend_check", path=str(frontend_path), exists=frontend_path.exists(), has_index=has_frontend)
+
     logger.info("mediaforge_ready", port=settings.APP_PORT)
 
     yield
@@ -162,8 +167,35 @@ def create_app() -> FastAPI:
 
     # Serve frontend static files
     frontend_dist = Path(__file__).parent.parent / "frontend" / "dist"
-    if frontend_dist.exists():
+    if frontend_dist.exists() and (frontend_dist / "index.html").exists():
         app.mount("/", StaticFiles(directory=str(frontend_dist), html=True), name="frontend")
+    else:
+        # Fallback: serve a basic HTML page that redirects to API docs
+        from fastapi.responses import HTMLResponse
+
+        @app.get("/", response_class=HTMLResponse)
+        async def root():
+            return """<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>MediaForge</title>
+<style>
+body{background:#0a0a0f;color:#f0f0f5;font-family:Inter,-apple-system,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}
+.c{text-align:center;max-width:500px;padding:2rem}
+h1{color:#6366f1;font-size:2rem;margin-bottom:.5rem}
+p{color:#8888a0;line-height:1.6}
+a{color:#818cf8;text-decoration:none}
+a:hover{text-decoration:underline}
+.status{background:#12121a;border:1px solid #1a1a28;border-radius:10px;padding:1.5rem;margin-top:1.5rem}
+</style></head>
+<body><div class="c">
+<h1>MediaForge</h1>
+<p>The backend is running. The frontend is building or hasn't been built yet.</p>
+<div class="status">
+<p><a href="/api/docs">API Documentation</a></p>
+<p><a href="/api/v1/system/health">Health Check</a></p>
+<p><a href="/api/v1/setup/status">Setup Status</a></p>
+</div>
+</div></body></html>"""
 
     return app
 

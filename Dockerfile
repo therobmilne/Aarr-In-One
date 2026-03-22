@@ -4,7 +4,7 @@ WORKDIR /app/frontend
 COPY frontend/package.json ./
 RUN npm install
 COPY frontend/ ./
-RUN npm run build
+RUN npm run build && ls -la dist/ && echo "Frontend build SUCCESS"
 
 # Stage 2: Python runtime
 FROM python:3.12-slim
@@ -24,22 +24,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Install Python deps via requirements.txt (simpler than pyproject.toml in Docker)
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy app code
 COPY backend/ ./backend/
 COPY alembic.ini ./
 COPY scripts/ ./scripts/
 RUN chmod +x scripts/*.sh
 
-# Copy frontend build
+# Copy frontend build and verify
 COPY --from=frontend-build /app/frontend/dist ./frontend/dist
+RUN ls -la frontend/dist/ && echo "Frontend dist copied OK"
 
 RUN mkdir -p /config/db /config/vpn /config/logs \
     /downloads/torrents /downloads/usenet /downloads/complete \
-    /media/movies /media/tv /media/recordings
+    /media/movies /media/tv /media/iptv-movies /media/iptv-shows /media/recordings
 
 EXPOSE 8686
 VOLUME ["/config", "/downloads", "/media"]
