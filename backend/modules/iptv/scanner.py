@@ -4,6 +4,9 @@ import re
 import time
 from pathlib import Path
 from typing import Any, AsyncGenerator
+from xml.etree import ElementTree
+
+import httpx
 
 from backend.logging_config import get_logger
 from backend.modules.iptv.xtream_client import XtreamClient
@@ -75,7 +78,7 @@ async def scan_vod_movies(
                        "elapsed_seconds": time.monotonic() - start}
             continue
 
-        url = client.generate_stream_url(stream_id, stream_type="movie")
+        url = client.generate_stream_url(stream_id, stream_type="movie", container_extension=extension)
 
         try:
             movie_dir.mkdir(parents=True, exist_ok=True)
@@ -168,7 +171,7 @@ async def scan_vod_series(
                     if strm_path.exists():
                         skipped += 1
                         continue
-                    url = client.generate_stream_url(ep_id, stream_type="series")
+                    url = client.generate_stream_url(ep_id, stream_type="series", container_extension=ext)
                     try:
                         season_dir.mkdir(parents=True, exist_ok=True)
                         strm_path.write_text(url, encoding="utf-8")
@@ -182,7 +185,7 @@ async def scan_vod_series(
             if strm_path.exists():
                 skipped += 1
             else:
-                url = client.generate_stream_url(series_id, stream_type="series")
+                url = client.generate_stream_url(series_id, stream_type="series", container_extension="mp4")
                 try:
                     season_dir.mkdir(parents=True, exist_ok=True)
                     strm_path.write_text(url, encoding="utf-8")
@@ -277,3 +280,71 @@ async def scan_live_channels(
            "total": total, "skipped": skipped, "is_complete": True,
            "elapsed_seconds": time.monotonic() - start,
            "channels": channel_records}
+
+
+async def fetch_epg(
+    client: XtreamClient,
+) -> AsyncGenerator[dict[str, Any], None]:
+    """Download the XMLTV EPG from the Xtream provider and return parsed entries.
+
+    Fetches: {server_url}/xmltv.php?username={user}&password={pass}
+
+    Yields progress dicts.  The final dict contains an ``epg_entries`` key with
+    the list of parsed programme dicts ready for database insertion.
+    """
+    start = time.monotonic()
+    phase = "epg"
+
+    yield {"phase": phase, "found": 0, "processed": 0, "total": 0, "skipped": 0,
+           "is_complete": False, "elapsed_seconds": 0.0}
+
+    epg_url = client.get_epg_url()
+    entries: list[dict[str, Any]] = []
+
+    try:
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(120.0, connect=15.0),
+            follow_redirects=True,
+        ) as http:
+            resp = await http.get(epg_url)
+            resp.raise_for_status()
+
+        root = ElementTree.fromstring(resp.content)
+        programmes = root.findall(".//programme")
+        total = len(programmes)
+
+        yield {"phase": phase, "found": total, "processed": 0, "total": total,
+               "skipped": 0, "is_complete": False,
+               "elapsed_seconds": time.monotonic() - start}
+
+        for idx, prog in enumerate(programmes, 1):
+            channel_epg_id = prog.get("channel", "")
+            title = prog.findtext("title", "")
+            if not channel_epg_id or not title:
+                continue
+
+            icon_el = prog.find("icon")
+            entries.append({
+                "channel_epg_id": channel_epg_id,
+                "title": title,
+                "description": prog.findtext("desc", ""),
+                "start_time": prog.get("start", ""),
+                "end_time": prog.get("stop", ""),
+                "category": prog.findtext("category", ""),
+                "icon_url": icon_el.get("src", "") if icon_el is not None else "",
+            })
+
+            if idx % 2000 == 0:
+                yield {"phase": phase, "found": total, "processed": idx, "total": total,
+                       "skipped": 0, "is_complete": False,
+                       "elapsed_seconds": time.monotonic() - start}
+
+        logger.info("epg_fetched", programmes=total, parsed=len(entries))
+
+    except Exception as exc:
+        logger.error("epg_fetch_failed", error=str(exc))
+
+    yield {"phase": phase, "found": len(entries), "processed": len(entries),
+           "total": len(entries), "skipped": 0, "is_complete": True,
+           "elapsed_seconds": time.monotonic() - start,
+           "epg_entries": entries}

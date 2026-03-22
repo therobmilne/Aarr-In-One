@@ -62,6 +62,10 @@ class XtreamClient:
     async def test_connection(self) -> dict[str, Any]:
         """Authenticate with the provider and return account info.
 
+        Calls GET {server_url}/player_api.php?username={user}&password={pass}
+        (no ``action`` param) and checks that the response JSON contains
+        ``user_info.auth == 1``.
+
         Returns the raw JSON dict from the provider which typically contains
         ``user_info`` and ``server_info`` keys.  Raises ``ConnectionError``
         on failure.
@@ -69,7 +73,8 @@ class XtreamClient:
         data = await self._request()  # no action = auth / server info
         if isinstance(data, dict) and data.get("user_info"):
             user_info = data["user_info"]
-            if user_info.get("auth") == 0:
+            # The Xtream Codes API signals success with auth == 1 (int).
+            if user_info.get("auth") != 1:
                 raise ConnectionError("Authentication failed: invalid credentials")
             logger.info("xtream_auth_ok", username=self.username)
             return data
@@ -99,15 +104,35 @@ class XtreamClient:
         data = await self._request("get_series")
         return data if isinstance(data, list) else []
 
-    def generate_stream_url(self, stream_id: int | str, stream_type: str = "movie") -> str:
+    def generate_stream_url(
+        self,
+        stream_id: int | str,
+        stream_type: str = "movie",
+        container_extension: str | None = None,
+    ) -> str:
         """Build the direct stream URL for a given stream.
 
         ``stream_type`` should be one of: ``movie``, ``series``, ``live``.
+
+        Correct URL formats:
+        - Live:   {server_url}/{username}/{password}/{stream_id}.ts
+        - Movie:  {server_url}/movie/{username}/{password}/{stream_id}.{ext}
+        - Series: {server_url}/series/{username}/{password}/{episode_id}.{ext}
         """
-        ext_map = {
-            "movie": "mp4",
-            "series": "mp4",
-            "live": "ts",
-        }
-        ext = ext_map.get(stream_type, "mp4")
-        return f"{self.server_url}/{stream_type}/{self.username}/{self.password}/{stream_id}.{ext}"
+        if stream_type == "live":
+            return (
+                f"{self.server_url}/{self.username}/{self.password}/{stream_id}.ts"
+            )
+
+        ext = container_extension or "mp4"
+        return (
+            f"{self.server_url}/{stream_type}/{self.username}/{self.password}"
+            f"/{stream_id}.{ext}"
+        )
+
+    def get_epg_url(self) -> str:
+        """Return the XMLTV EPG URL for this provider."""
+        return (
+            f"{self.server_url}/xmltv.php"
+            f"?username={self.username}&password={self.password}"
+        )

@@ -121,7 +121,7 @@ async def start_scan(
 @router.get("/scan/status", response_model=ScanProgress)
 async def scan_status() -> ScanProgress:
     """Return the current scan progress."""
-    return ScanProgress(**{k: v for k, v in _scan_progress.items() if k != "channels"})
+    return ScanProgress(**{k: v for k, v in _scan_progress.items() if k not in ("channels", "epg_entries")})
 
 
 @router.get("/credentials")
@@ -186,6 +186,21 @@ async def _run_scan(client: XtreamClient) -> None:
     if channel_records:
         await _persist_live_channels(channel_records)
 
+    # -- EPG --
+    epg_entries: list[dict] = []
+    async for progress in scanner.fetch_epg(client):
+        _scan_progress = progress
+        entries = progress.get("epg_entries")
+        if entries:
+            epg_entries = entries
+        await _broadcast_progress(progress)
+
+    if epg_entries:
+        await _persist_epg(epg_entries)
+
+    # Register the Xtream EPG URL so the periodic refresh task can use it too
+    await _register_epg_url(client.get_epg_url())
+
     _scan_progress = {
         "phase": "idle",
         "found": 0,
@@ -202,7 +217,7 @@ async def _run_scan(client: XtreamClient) -> None:
 
 async def _broadcast_progress(progress: dict[str, Any]) -> None:
     """Push scan progress to all connected WebSocket clients."""
-    safe = {k: v for k, v in progress.items() if k != "channels"}
+    safe = {k: v for k, v in progress.items() if k not in ("channels", "epg_entries")}
     try:
         await manager.broadcast("iptv_scan_progress", safe)
     except Exception:
@@ -271,3 +286,50 @@ async def _persist_live_channels(channel_records: list[dict[str, Any]]) -> None:
             logger.info("live_channels_persisted", total=len(channel_records), new=new_count)
     except Exception as exc:
         logger.error("live_channels_persist_failed", error=str(exc))
+
+
+async def _register_epg_url(epg_url: str) -> None:
+    """Ensure the Xtream EPG URL is stored in the epg_urls setting list."""
+    try:
+        async with async_session() as db:
+            existing = await get_setting(db, "epg_urls", [])
+            if not isinstance(existing, list):
+                existing = []
+            if epg_url not in existing:
+                existing.append(epg_url)
+                await set_setting(db, "epg_urls", existing, category="iptv")
+                await db.commit()
+    except Exception as exc:
+        logger.error("epg_url_register_failed", error=str(exc))
+
+
+async def _persist_epg(epg_entries: list[dict[str, Any]]) -> None:
+    """Store EPG entries fetched from the Xtream provider into the database.
+
+    Replaces all existing EPG data with the freshly-fetched entries.
+    """
+    try:
+        from sqlalchemy import delete
+
+        from backend.models.livetv import EPGEntry
+
+        async with async_session() as db:
+            # Clear existing EPG data and replace with fresh entries
+            await db.execute(delete(EPGEntry))
+
+            for entry_data in epg_entries:
+                entry = EPGEntry(
+                    channel_epg_id=entry_data["channel_epg_id"],
+                    title=entry_data["title"],
+                    description=entry_data.get("description", ""),
+                    start_time=entry_data["start_time"],
+                    end_time=entry_data["end_time"],
+                    category=entry_data.get("category", ""),
+                    icon_url=entry_data.get("icon_url", ""),
+                )
+                db.add(entry)
+
+            await db.commit()
+            logger.info("epg_persisted", entries=len(epg_entries))
+    except Exception as exc:
+        logger.error("epg_persist_failed", error=str(exc))

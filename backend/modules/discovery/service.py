@@ -40,6 +40,12 @@ async def create_request(
     )
 
     logger.info("request_created", title=data.title, user=user.username, auto_approved=user.auto_approve)
+
+    # If auto-approved, kick off the search/download pipeline
+    if user.auto_approve:
+        from backend.modules.media_pipeline import schedule_request_processing
+        await schedule_request_processing(request.id)
+
     return request
 
 
@@ -61,6 +67,11 @@ async def approve_request(
         "request:approved",
         {"id": request.id, "title": request.title},
     )
+
+    # Kick off the search/download pipeline
+    from backend.modules.media_pipeline import schedule_request_processing
+    await schedule_request_processing(request.id)
+
     return request
 
 

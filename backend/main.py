@@ -63,6 +63,13 @@ async def lifespan(app: FastAPI):
     has_frontend = frontend_path.exists() and (frontend_path / "index.html").exists()
     logger.info("frontend_check", path=str(frontend_path), exists=frontend_path.exists(), has_index=has_frontend)
 
+    # Start download progress monitor
+    try:
+        from backend.modules.downloads.service import start_progress_monitor
+        await start_progress_monitor()
+    except Exception as e:
+        logger.warning("progress_monitor_start_failed", error=str(e))
+
     logger.info("mediaforge_ready", port=settings.APP_PORT)
 
     yield

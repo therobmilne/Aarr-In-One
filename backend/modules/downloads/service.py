@@ -1,10 +1,11 @@
+import asyncio
+
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.exceptions import NotFoundError
 from backend.logging_config import get_logger
-from backend.models.download import Download, DownloadStatus, DownloadType
-from backend.models.download import DownloadCategory
+from backend.models.download import Download, DownloadCategory, DownloadStatus, DownloadType
 from backend.modules.downloads.release_parser import detect_category
 from backend.modules.downloads.schemas import DownloadCreate, DownloadStats
 from backend.modules.downloads.torrent_client import torrent_client
@@ -12,6 +13,8 @@ from backend.modules.downloads.usenet_client import usenet_client
 from backend.websocket_manager import manager
 
 logger = get_logger("downloads")
+
+_progress_task: asyncio.Task | None = None
 
 
 async def add_download(data: DownloadCreate, db: AsyncSession) -> Download:
@@ -120,3 +123,82 @@ async def get_stats(db: AsyncSession) -> DownloadStats:
         total_downloaded_bytes=row[2],
         total_size_bytes=row[3],
     )
+
+
+async def start_progress_monitor():
+    """Background task that syncs download progress from torrent/usenet engines to DB and WebSocket."""
+    global _progress_task
+    if _progress_task and not _progress_task.done():
+        return  # Already running
+
+    async def _monitor():
+        from backend.database import async_session
+
+        while True:
+            try:
+                # Get torrent statuses
+                torrent_statuses = torrent_client.get_all_statuses()
+                usenet_statuses = usenet_client.get_all_statuses()
+
+                async with async_session() as db:
+                    for ts in torrent_statuses:
+                        result = await db.execute(
+                            select(Download).where(Download.info_hash == ts["info_hash"])
+                        )
+                        dl = result.scalar_one_or_none()
+                        if dl and dl.status == DownloadStatus.DOWNLOADING:
+                            dl.progress = ts["progress"] * 100
+                            dl.speed_bytes_sec = int(ts["download_rate"])
+                            dl.downloaded_bytes = ts["total_wanted_done"]
+                            dl.size_bytes = ts["total_wanted"]
+                            dl.seeds = ts["num_seeds"]
+                            dl.peers = ts["num_peers"]
+                            if ts["download_rate"] > 0:
+                                remaining = ts["total_wanted"] - ts["total_wanted_done"]
+                                dl.eta_seconds = int(remaining / ts["download_rate"])
+
+                            await manager.broadcast("download:progress", {
+                                "id": dl.id,
+                                "progress": dl.progress,
+                                "speed": dl.speed_bytes_sec,
+                                "seeds": dl.seeds,
+                                "peers": dl.peers,
+                                "eta": dl.eta_seconds,
+                            })
+
+                            # Check if complete
+                            if ts.get("is_seeding") or ts["progress"] >= 1.0:
+                                dl.status = DownloadStatus.COMPLETED
+                                dl.progress = 100.0
+                                await manager.broadcast("download:complete", {
+                                    "id": dl.id, "title": dl.title
+                                })
+                                logger.info("download_completed", title=dl.title, id=dl.id)
+
+                    for us in usenet_statuses:
+                        result = await db.execute(
+                            select(Download).where(Download.info_hash == us["nzb_id"])
+                        )
+                        dl = result.scalar_one_or_none()
+                        if dl and dl.status == DownloadStatus.DOWNLOADING:
+                            dl.progress = us.get("progress", 0)
+                            dl.speed_bytes_sec = us.get("speed_bytes_sec", 0)
+                            dl.downloaded_bytes = us.get("downloaded_bytes", 0)
+                            dl.size_bytes = us.get("total_bytes", 0)
+
+                            if us.get("status") == "completed":
+                                dl.status = DownloadStatus.COMPLETED
+                                dl.progress = 100.0
+                                await manager.broadcast("download:complete", {
+                                    "id": dl.id, "title": dl.title
+                                })
+
+                    await db.commit()
+
+            except Exception as e:
+                logger.error("progress_monitor_error", error=str(e))
+
+            await asyncio.sleep(2)
+
+    _progress_task = asyncio.create_task(_monitor())
+    logger.info("download_progress_monitor_started")
