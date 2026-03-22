@@ -1,45 +1,223 @@
 services:
-  jellyfin:
-    image: jellyfin/jellyfin:latest
-    container_name: mediaforge-jellyfin
+  # ============================================================
+  # MEDIAFORGE — The unified frontend (the ONLY thing users see)
+  # ============================================================
+  mediaforge:
+    build: .
+    container_name: mediaforge
+    ports:
+      - "8686:8686"    # THE ONLY PORT USERS NEED
     environment:
       - TZ=America/Toronto
       - PUID=1000
       - PGID=1000
-    ports:
-      - "8096:8096"
+      # Internal service URLs (auto-discovered, users never see these)
+      - RADARR_URL=http://radarr:7878
+      - SONARR_URL=http://sonarr:8989
+      - PROWLARR_URL=http://prowlarr:9696
+      - JELLYSEERR_URL=http://jellyseerr:5055
+      - QBITTORRENT_URL=http://gluetun:8080
+      - SABNZBD_URL=http://gluetun:8081
+      - BAZARR_URL=http://bazarr:6767
+      - THREADFIN_URL=http://threadfin:34400
+      - GLUETUN_URL=http://gluetun:8000
+      - JELLYFIN_URL=http://192.168.2.54:8096
+      - LOG_LEVEL=info
     volumes:
-      - ./jellyfin-config:/config
-      - ./jellyfin-cache:/cache
+      - ./config/mediaforge:/config
       - /mnt/media:/media
+      - /mnt/downloads:/downloads
+      # Mount backend service configs so we can read their API keys
+      - ./config/radarr:/config/radarr
+      - ./config/sonarr:/config/sonarr
+      - ./config/prowlarr:/config/prowlarr
+      - ./config/bazarr:/config/bazarr
+      - ./config/qbittorrent:/config/qbittorrent
+      - ./config/sabnzbd:/config/sabnzbd
+    depends_on:
+      - radarr
+      - sonarr
+      - prowlarr
+      - jellyseerr
+      - gluetun
+      - bazarr
+      - threadfin
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8096/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 30s
+    networks:
+      - mediaforge-net
 
-  mediaforge:
-    build: .
-    container_name: mediaforge
+  # ============================================================
+  # GLUETUN — VPN tunnel (qBittorrent + SABnzbd route through this)
+  # ============================================================
+  gluetun:
+    image: qmcgaw/gluetun:latest
+    container_name: gluetun
     cap_add:
       - NET_ADMIN
     devices:
       - /dev/net/tun:/dev/net/tun
     ports:
-      - "8686:8686"
+      - "8080:8080"    # qBittorrent WebUI (internal only)
+      - "8081:8081"    # SABnzbd WebUI (internal only)
     environment:
       - TZ=America/Toronto
+      - VPN_SERVICE_PROVIDER=${VPN_PROVIDER:-protonvpn}
+      - VPN_TYPE=${VPN_TYPE:-wireguard}
+      - WIREGUARD_PRIVATE_KEY=${VPN_PRIVATE_KEY:-}
+      - WIREGUARD_ADDRESSES=${VPN_ADDRESSES:-}
+      - SERVER_COUNTRIES=${VPN_COUNTRIES:-Canada}
+      - VPN_PORT_FORWARDING=on
+      - VPN_PORT_FORWARDING_PROVIDER=${VPN_PROVIDER:-protonvpn}
+      - FIREWALL_OUTBOUND_SUBNETS=172.20.0.0/16,192.168.0.0/16
+      - UPDATER_PERIOD=24h
+    volumes:
+      - ./config/gluetun:/gluetun
+    restart: unless-stopped
+    networks:
+      mediaforge-net:
+        ipv4_address: 172.20.0.10
+
+  # ============================================================
+  # QBITTORRENT — Torrent client (runs through Gluetun VPN)
+  # ============================================================
+  qbittorrent:
+    image: lscr.io/linuxserver/qbittorrent:latest
+    container_name: qbittorrent
+    network_mode: "service:gluetun"
+    environment:
       - PUID=1000
       - PGID=1000
-      - JELLYFIN_URL=http://jellyfin:8096
-      - LOG_LEVEL=info
+      - TZ=America/Toronto
+      - WEBUI_PORT=8080
     volumes:
-      - ./config:/config
-      - /mnt/media:/media
+      - ./config/qbittorrent:/config
       - /mnt/downloads:/downloads
     depends_on:
-      jellyfin:
+      gluetun:
         condition: service_healthy
     restart: unless-stopped
+
+  # ============================================================
+  # SABNZBD — Usenet client (runs through Gluetun VPN)
+  # ============================================================
+  sabnzbd:
+    image: lscr.io/linuxserver/sabnzbd:latest
+    container_name: sabnzbd
+    network_mode: "service:gluetun"
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/Toronto
+    volumes:
+      - ./config/sabnzbd:/config
+      - /mnt/downloads:/downloads
+    depends_on:
+      gluetun:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ============================================================
+  # PROWLARR — Indexer manager
+  # ============================================================
+  prowlarr:
+    image: lscr.io/linuxserver/prowlarr:latest
+    container_name: prowlarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/Toronto
+    volumes:
+      - ./config/prowlarr:/config
+    restart: unless-stopped
+    networks:
+      - mediaforge-net
+
+  # ============================================================
+  # RADARR — Movie manager
+  # ============================================================
+  radarr:
+    image: lscr.io/linuxserver/radarr:latest
+    container_name: radarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/Toronto
+    volumes:
+      - ./config/radarr:/config
+      - /mnt/media:/media
+      - /mnt/downloads:/downloads
+    restart: unless-stopped
+    networks:
+      - mediaforge-net
+
+  # ============================================================
+  # SONARR — TV show manager
+  # ============================================================
+  sonarr:
+    image: lscr.io/linuxserver/sonarr:latest
+    container_name: sonarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/Toronto
+    volumes:
+      - ./config/sonarr:/config
+      - /mnt/media:/media
+      - /mnt/downloads:/downloads
+    restart: unless-stopped
+    networks:
+      - mediaforge-net
+
+  # ============================================================
+  # BAZARR — Subtitle manager
+  # ============================================================
+  bazarr:
+    image: lscr.io/linuxserver/bazarr:latest
+    container_name: bazarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/Toronto
+    volumes:
+      - ./config/bazarr:/config
+      - /mnt/media:/media
+    restart: unless-stopped
+    networks:
+      - mediaforge-net
+
+  # ============================================================
+  # JELLYSEERR — Request manager (MediaForge wraps this)
+  # ============================================================
+  jellyseerr:
+    image: fallenbagel/jellyseerr:latest
+    container_name: jellyseerr
+    environment:
+      - TZ=America/Toronto
+    volumes:
+      - ./config/jellyseerr:/app/config
+    restart: unless-stopped
+    networks:
+      - mediaforge-net
+
+  # ============================================================
+  # THREADFIN — IPTV proxy for Jellyfin Live TV
+  # ============================================================
+  threadfin:
+    image: fyb3roptik/threadfin:latest
+    container_name: threadfin
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/Toronto
+    volumes:
+      - ./config/threadfin:/home/threadfin/conf
+    restart: unless-stopped
+    networks:
+      - mediaforge-net
+
+networks:
+  mediaforge-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

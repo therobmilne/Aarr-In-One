@@ -23,14 +23,20 @@ class Settings(BaseSettings):
     PGID: int = 1000
     TZ: str = "America/Toronto"
 
-    # Jellyfin
-    JELLYFIN_URL: str = ""
+    # Jellyfin (external — user's existing server)
+    JELLYFIN_URL: str = "http://192.168.2.54:8096"
     JELLYFIN_API_KEY: str = ""
 
-    # VPN
-    VPN_PROVIDER: str = ""
-    VPN_TYPE: str = "wireguard"
-    VPN_CONFIG_PATH: str = "/config/vpn/wg0.conf"
+    # Backend service URLs (internal docker network)
+    RADARR_URL: str = "http://radarr:7878"
+    SONARR_URL: str = "http://sonarr:8989"
+    PROWLARR_URL: str = "http://prowlarr:9696"
+    JELLYSEERR_URL: str = "http://jellyseerr:5055"
+    QBITTORRENT_URL: str = "http://gluetun:8080"
+    SABNZBD_URL: str = "http://gluetun:8081"
+    BAZARR_URL: str = "http://bazarr:6767"
+    THREADFIN_URL: str = "http://threadfin:34400"
+    GLUETUN_URL: str = "http://gluetun:8000"
 
     # Paths
     CONFIG_DIR: str = "/config"

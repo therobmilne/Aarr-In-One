@@ -268,7 +268,7 @@ function IptvTab() {
   }
 
   const handleScanLibrary = async () => {
-    // Save credentials first
+    // Save credentials first, then configure Threadfin with IPTV source
     try {
       await api.put('/iptv/credentials', {
         server_url: serverUrl,
@@ -279,40 +279,21 @@ function IptvTab() {
 
     setScanning(true)
     setScanComplete(false)
-    setScanPhase('Starting...')
-    setScanFound(0)
-    setScanProcessed(0)
-    setScanTotal(0)
-    setScanSkipped(0)
-    setScanProgress(0)
+    setScanPhase('Configuring Threadfin...')
 
     try {
-      await api.post('/iptv/scan')
-      // Poll for status
-      pollRef.current = setInterval(async () => {
-        try {
-          const { data } = await api.get('/iptv/scan/status')
-          setScanPhase(data.phase || '')
-          setScanFound(data.found || 0)
-          setScanProcessed(data.processed || 0)
-          setScanTotal(data.total || 0)
-          setScanSkipped(data.skipped || 0)
-          // Calculate progress percentage
-          const pct = data.total > 0 ? Math.round((data.processed / data.total) * 100) : 0
-          setScanProgress(pct)
-
-          if (data.is_complete && data.phase !== 'idle') {
-            stopPolling()
-            setScanning(false)
-            setScanComplete(true)
-            setScanProgress(100)
-          }
-        } catch {
-          stopPolling()
-          setScanning(false)
-        }
-      }, 1500)
+      await api.post('/livetv/iptv/config', {
+        server_url: serverUrl,
+        username,
+        password,
+        name: 'IPTV Provider',
+      })
+      setScanPhase('Threadfin configured!')
+      setScanComplete(true)
+      setScanProgress(100)
     } catch {
+      setScanPhase('Failed to configure Threadfin')
+    } finally {
       setScanning(false)
     }
   }

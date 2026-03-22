@@ -2,7 +2,8 @@
 set -e
 
 echo "========================================="
-echo "  MediaForge starting..."
+echo "  MediaForge v2 starting..."
+echo "  Unified frontend for arr stack"
 echo "========================================="
 
 # Timezone
@@ -11,16 +12,7 @@ if [ -n "$TZ" ] && [ -f "/usr/share/zoneinfo/$TZ" ]; then
 fi
 
 # Create directory structure
-#   /media/movies        - Downloaded movies (torrent/usenet)
-#   /media/tv            - Downloaded TV shows (torrent/usenet)
-#   /media/iptv-movies   - IPTV VOD movies (strm files)
-#   /media/iptv-shows    - IPTV VOD TV shows (strm files)
-#   /media/recordings    - Live TV DVR recordings
-mkdir -p /config/db /config/vpn /config/logs \
-    /downloads/torrents /downloads/usenet /downloads/complete \
-    /media/movies /media/tv \
-    /media/iptv-movies /media/iptv-shows \
-    /media/recordings
+mkdir -p /config/db /config/logs
 
 # uvicorn needs lowercase log level
 LOG_LEVEL_LOWER=$(echo "${LOG_LEVEL:-info}" | tr '[:upper:]' '[:lower:]')

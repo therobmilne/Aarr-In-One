@@ -10,7 +10,7 @@ aiosqlite>=0.20.0
 alembic>=1.14.0
 greenlet>=3.0.0
 
-# HTTP client
+# HTTP client (used for proxying to arr services)
 httpx>=0.28.0
 
 # Auth
@@ -24,19 +24,9 @@ structlog>=24.4.0
 
 # File ops
 aiofiles>=24.1.0
-jinja2>=3.1.4
 
 # Serialization
 orjson>=3.10.0
 
-# Redis (optional but included)
+# Redis (optional — for caching/sessions)
 redis>=5.2.0
-
-# Task queue (optional but included)
-celery[redis]>=5.4.0
-
-# Subtitle engine (optional, degrades gracefully if missing)
-subliminal>=2.2.1
-
-# Cloudflare bypass (optional, degrades gracefully if missing)
-playwright>=1.49.0

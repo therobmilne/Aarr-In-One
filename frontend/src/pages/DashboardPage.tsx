@@ -8,15 +8,21 @@ import { useAuth } from '@/hooks/useAuth'
 import { formatBytes } from '@/lib/utils'
 import api from '@/lib/api'
 
+interface ServiceHealth {
+  status: string
+  code: number
+}
+
 interface HealthData {
   status: string
-  subsystems: { name: string; status: string; message: string }[]
+  services: Record<string, ServiceHealth>
 }
 
 export function DashboardPage() {
   const { user } = useAuth()
   const [health, setHealth] = useState<HealthData | null>(null)
   const [diskFree, setDiskFree] = useState<string>('--')
+  const [activeDownloads, setActiveDownloads] = useState(0)
 
   useEffect(() => {
     const fetchHealth = async () => {
@@ -38,14 +44,24 @@ export function DashboardPage() {
         // Admin only
       }
     }
+    const fetchDownloads = async () => {
+      try {
+        const { data } = await api.get('/downloads/stats')
+        setActiveDownloads(data.active || 0)
+      } catch {
+        // Not critical
+      }
+    }
     fetchHealth()
     fetchInfo()
-    const interval = setInterval(fetchHealth, 30000)
+    fetchDownloads()
+    const interval = setInterval(() => { fetchHealth(); fetchDownloads() }, 30000)
     return () => clearInterval(interval)
   }, [])
 
-  const vpnStatus = health?.subsystems.find((s) => s.name === 'vpn')
-  const vpnConnected = vpnStatus?.status === 'healthy'
+  const vpnConnected = health?.services?.gluetun?.status === 'healthy'
+  const servicesHealthy = health ? Object.values(health.services).filter(s => s.status === 'healthy').length : 0
+  const servicesTotal = health ? Object.keys(health.services).length : 0
 
   return (
     <div>
@@ -64,8 +80,8 @@ export function DashboardPage() {
         <StatusCard
           icon={Download}
           label="Downloads"
-          value="0 active"
-          status="info"
+          value={`${activeDownloads} active`}
+          status={activeDownloads > 0 ? 'warning' : 'info'}
         />
         <StatusCard
           icon={HardDrive}
@@ -76,9 +92,10 @@ export function DashboardPage() {
         />
         <StatusCard
           icon={MessageSquare}
-          label="Requests"
-          value="0 pending"
-          status="info"
+          label="Services"
+          value={`${servicesHealthy}/${servicesTotal}`}
+          status={servicesHealthy === servicesTotal ? 'success' : 'warning'}
+          subtitle="healthy"
         />
       </div>
 

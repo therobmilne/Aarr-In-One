@@ -266,14 +266,8 @@ export function SeriesPage() {
         requestedSeasons = last ? [last.season_number] : undefined
       }
 
-      await api.post('/requests', {
-        type: 'series',
+      await api.post('/series', {
         tmdb_id: selectedShow.tmdb_id || selectedShow.id,
-        title: selectedShow.title,
-        year: selectedShow.year,
-        poster_url: selectedShow.poster_url,
-        quality: qualityChoice === 'any' ? undefined : qualityChoice,
-        requested_seasons: requestedSeasons,
       })
       setRequestSuccess(true)
     } catch {

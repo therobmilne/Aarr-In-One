@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Download, Pause, Play, Trash2, Shield, ArrowDown, ArrowUp, Film, Tv } from 'lucide-react'
+import { Download, Pause, Play, Trash2, ArrowDown, ArrowUp, Film, Tv } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -10,21 +10,19 @@ import { formatBytes, formatSpeed, formatDuration } from '@/lib/utils'
 import api from '@/lib/api'
 
 interface DownloadItem {
-  id: number
+  id: string
+  name: string
   type: string
   status: string
   category: string
-  title: string
-  indexer_name: string | null
-  size_bytes: number
-  downloaded_bytes: number
-  speed_bytes_sec: number
+  size: number
   progress: number
-  eta_seconds: number | null
-  seed_ratio: number
-  peers: number
+  download_speed: number
+  upload_speed: number
   seeds: number
-  error_message: string | null
+  peers: number
+  eta: number | string
+  ratio: number
 }
 
 export function DownloadsPage() {
@@ -38,8 +36,8 @@ export function DownloadsPage() {
       const { data } = await api.get('/downloads')
       const items = Array.isArray(data) ? data : []
       setDownloads(items)
-      setTotalDown(items.reduce((s: number, d: DownloadItem) => s + (d.status === 'downloading' ? d.speed_bytes_sec : 0), 0))
-      setTotalUp(0) // TODO: seeding upload speed
+      setTotalDown(items.reduce((s: number, d: DownloadItem) => s + (d.download_speed || 0), 0))
+      setTotalUp(items.reduce((s: number, d: DownloadItem) => s + (d.upload_speed || 0), 0))
     } catch { /* not ready */ }
     finally { setLoading(false) }
   }
@@ -50,27 +48,33 @@ export function DownloadsPage() {
     return () => clearInterval(interval)
   }, [])
 
-  const handlePause = async (id: number) => { await api.post(`/downloads/${id}/pause`); fetchDownloads() }
-  const handleResume = async (id: number) => { await api.post(`/downloads/${id}/resume`); fetchDownloads() }
-  const handleDelete = async (id: number) => {
+  const handlePause = async (id: string) => { await api.post(`/downloads/${id}/pause`); fetchDownloads() }
+  const handleResume = async (id: string) => { await api.post(`/downloads/${id}/resume`); fetchDownloads() }
+  const handleDelete = async (id: string) => {
     if (confirm('Remove this download?')) { await api.delete(`/downloads/${id}`); fetchDownloads() }
   }
 
   const activeCount = downloads.filter((d) => d.status === 'downloading' || d.status === 'seeding').length
 
   const getCategoryIcon = (cat: string) => {
-    if (cat === 'movies' || cat === 'movie') return <Film size={14} className="text-status-info" />
-    if (cat === 'tv') return <Tv size={14} className="text-status-warning" />
+    if (cat === 'radarr' || cat === 'movies' || cat === 'movie') return <Film size={14} className="text-status-info" />
+    if (cat === 'sonarr' || cat === 'tv') return <Tv size={14} className="text-status-warning" />
     return <Download size={14} className="text-text-muted" />
   }
 
   const getStatusColor = (status: string) => {
     if (status === 'downloading') return 'downloading'
     if (status === 'seeding') return 'healthy'
-    if (status === 'completed' || status === 'imported') return 'available'
-    if (status === 'failed') return 'failed'
+    if (status === 'completed' || status === 'importing') return 'available'
+    if (status === 'failed' || status === 'error') return 'failed'
     if (status === 'paused') return 'warning'
     return 'default' as const
+  }
+
+  const formatEta = (eta: number | string) => {
+    if (typeof eta === 'string') return eta || '--'
+    if (!eta || eta <= 0 || eta === 8640000) return '--'
+    return formatDuration(eta)
   }
 
   return (
@@ -126,7 +130,7 @@ export function DownloadsPage() {
                   {/* Name + category */}
                   <div className="col-span-5 flex items-center gap-2 min-w-0">
                     {getCategoryIcon(dl.category)}
-                    <span className="text-body font-medium text-text-primary truncate">{dl.title}</span>
+                    <span className="text-body font-medium text-text-primary truncate">{dl.name}</span>
                   </div>
 
                   {/* Type */}
@@ -138,7 +142,7 @@ export function DownloadsPage() {
 
                   {/* Size */}
                   <div className="col-span-1 text-caption text-text-muted">
-                    {formatBytes(dl.size_bytes)}
+                    {formatBytes(dl.size)}
                   </div>
 
                   {/* Progress */}
@@ -156,12 +160,12 @@ export function DownloadsPage() {
 
                   {/* Speed */}
                   <div className="col-span-1 text-caption text-text-muted">
-                    {dl.status === 'downloading' ? formatSpeed(dl.speed_bytes_sec) : '--'}
+                    {dl.status === 'downloading' ? formatSpeed(dl.download_speed) : '--'}
                   </div>
 
                   {/* ETA */}
                   <div className="col-span-1 text-caption text-text-muted">
-                    {dl.eta_seconds && dl.eta_seconds > 0 ? formatDuration(dl.eta_seconds) : '--'}
+                    {formatEta(dl.eta)}
                   </div>
 
                   {/* Actions */}
@@ -181,10 +185,6 @@ export function DownloadsPage() {
                     </Button>
                   </div>
                 </div>
-
-                {dl.error_message && (
-                  <p className="text-caption text-status-error mt-1">{dl.error_message}</p>
-                )}
               </CardContent>
             </Card>
           ))}

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Check, ChevronRight, ChevronLeft, Loader2, Wifi, WifiOff, Film, ExternalLink } from 'lucide-react'
+import { Check, ChevronRight, ChevronLeft, Loader2, Wifi, WifiOff, Film, ExternalLink, Server } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -10,8 +10,8 @@ import api from '@/lib/api'
 const steps = [
   { id: 'welcome', title: 'Welcome to MediaForge' },
   { id: 'jellyfin', title: 'Connect Jellyfin' },
+  { id: 'services', title: 'Backend Services' },
   { id: 'tmdb', title: 'TMDB API Key' },
-  { id: 'paths', title: 'Media Paths' },
   { id: 'complete', title: 'All Done!' },
 ]
 
@@ -27,6 +27,12 @@ export function SetupWizardPage() {
   const [jfPassword, setJfPassword] = useState('')
   const [jfConnecting, setJfConnecting] = useState(false)
   const [jfResult, setJfResult] = useState<{ success: boolean; message: string; api_key?: string } | null>(null)
+
+  // Backend services state
+  const [servicesChecking, setServicesChecking] = useState(false)
+  const [servicesHealth, setServicesHealth] = useState<Record<string, boolean>>({})
+  const [configuring, setConfiguring] = useState(false)
+  const [configResult, setConfigResult] = useState<Record<string, boolean> | null>(null)
 
   // TMDB state
   const [tmdbKey, setTmdbKey] = useState('')
@@ -44,9 +50,7 @@ export function SetupWizardPage() {
         if (data.is_complete) {
           navigate('/login')
         }
-      } catch {
-        // API not ready yet
-      }
+      } catch { /* API not ready */ }
     }
     checkStatus()
   }, [navigate])
@@ -58,6 +62,13 @@ export function SetupWizardPage() {
     }
   }, [step])
 
+  // Auto-check services when reaching step 2
+  useEffect(() => {
+    if (step === 2 && Object.keys(servicesHealth).length === 0) {
+      checkServices()
+    }
+  }, [step])
+
   const detectJellyfin = async () => {
     setJfDetecting(true)
     try {
@@ -66,11 +77,8 @@ export function SetupWizardPage() {
         setJfDetected({ url: data.jellyfin_url, server_name: data.server_name, version: data.version })
         setJfUrl(data.jellyfin_url)
       }
-    } catch {
-      // Not found
-    } finally {
-      setJfDetecting(false)
-    }
+    } catch { /* Not found */ }
+    finally { setJfDetecting(false) }
   }
 
   const connectJellyfin = async () => {
@@ -78,16 +86,32 @@ export function SetupWizardPage() {
     setJfResult(null)
     try {
       const { data } = await api.post('/setup/jellyfin/connect', {
-        jellyfin_url: jfUrl || 'http://jellyfin:8096',
+        jellyfin_url: jfUrl || 'http://192.168.2.54:8096',
         username: jfUsername,
         password: jfPassword,
       })
       setJfResult(data)
     } catch {
       setJfResult({ success: false, message: 'Connection failed. Is Jellyfin running?' })
-    } finally {
-      setJfConnecting(false)
-    }
+    } finally { setJfConnecting(false) }
+  }
+
+  const checkServices = async () => {
+    setServicesChecking(true)
+    try {
+      const { data } = await api.post('/setup/services/check')
+      setServicesHealth(data.services || {})
+    } catch { /* */ }
+    finally { setServicesChecking(false) }
+  }
+
+  const autoConfigureServices = async () => {
+    setConfiguring(true)
+    try {
+      const { data } = await api.post('/setup/services/configure')
+      setConfigResult(data)
+    } catch { /* */ }
+    finally { setConfiguring(false) }
   }
 
   const testTmdb = async () => {
@@ -98,9 +122,7 @@ export function SetupWizardPage() {
       setTmdbResult(data)
     } catch {
       setTmdbResult({ success: false, message: 'Failed to validate key' })
-    } finally {
-      setTmdbTesting(false)
-    }
+    } finally { setTmdbTesting(false) }
   }
 
   const finishSetup = async () => {
@@ -120,15 +142,22 @@ export function SetupWizardPage() {
       }
     } catch {
       alert('Setup failed, please try again')
-    } finally {
-      setCompleting(false)
-    }
+    } finally { setCompleting(false) }
   }
 
   const canProceed = () => {
     if (step === 1) return jfResult?.success
-    if (step === 2) return tmdbResult?.success
+    if (step === 2) return true // Services step is informational
+    if (step === 3) return tmdbResult?.success
     return true
+  }
+
+  const serviceNames: Record<string, string> = {
+    radarr: 'Radarr (Movies)',
+    sonarr: 'Sonarr (TV Shows)',
+    prowlarr: 'Prowlarr (Indexers)',
+    qbittorrent: 'qBittorrent (Torrents)',
+    bazarr: 'Bazarr (Subtitles)',
   }
 
   return (
@@ -162,14 +191,15 @@ export function SetupWizardPage() {
               <div className="text-center space-y-4">
                 <h2 className="text-section-header">Let's get you set up</h2>
                 <p className="text-body text-text-secondary">
-                  MediaForge replaces Radarr, Sonarr, Prowlarr, Jellyseerr, qBittorrent, SABnzbd, Bazarr,
-                  Threadfin, and Gluetun with one app.
+                  MediaForge is a unified frontend for your entire media stack. All backend services
+                  (Radarr, Sonarr, Prowlarr, qBittorrent, etc.) are installed automatically.
                 </p>
                 <div className="bg-bg-elevated rounded-md p-4 text-left space-y-2 text-body text-text-secondary">
                   <p>This wizard will:</p>
-                  <p>1. Connect to your Jellyfin server (auto-detected)</p>
-                  <p>2. Set up TMDB for movie/TV metadata and posters</p>
-                  <p>3. Confirm your media storage paths</p>
+                  <p>1. Connect to your Jellyfin server</p>
+                  <p>2. Auto-configure all backend services</p>
+                  <p>3. Set up TMDB for movie/TV metadata</p>
+                  <p>4. Get you ready to browse and request content</p>
                 </div>
                 <p className="text-caption text-text-muted">Takes about 2 minutes</p>
               </div>
@@ -206,8 +236,7 @@ export function SetupWizardPage() {
 
                 <div>
                   <label className="block text-label text-text-secondary mb-1">Jellyfin URL</label>
-                  <Input placeholder="http://jellyfin:8096" value={jfUrl} onChange={(e) => setJfUrl(e.target.value)} />
-                  <p className="text-caption text-text-muted mt-1">Leave default if using the bundled Jellyfin</p>
+                  <Input placeholder="http://192.168.2.54:8096" value={jfUrl} onChange={(e) => setJfUrl(e.target.value)} />
                 </div>
                 <div>
                   <label className="block text-label text-text-secondary mb-1">Admin Username</label>
@@ -226,14 +255,59 @@ export function SetupWizardPage() {
                   <div className={`rounded-md p-3 text-body ${jfResult.success ? 'bg-status-success/10 text-status-success' : 'bg-status-error/10 text-status-error'}`}>
                     {jfResult.success && <Check size={16} className="inline mr-2" />}
                     {jfResult.message}
-                    {jfResult.success && <p className="text-caption mt-1 text-text-muted">API key created and saved automatically</p>}
                   </div>
                 )}
               </div>
             )}
 
-            {/* Step 2: TMDB */}
+            {/* Step 2: Backend Services */}
             {step === 2 && (
+              <div className="space-y-5">
+                <h2 className="text-section-header">Backend Services</h2>
+                <p className="text-body text-text-secondary">
+                  Checking that all backend services are running and configuring them to work together.
+                </p>
+
+                <div className="space-y-2">
+                  {Object.entries(serviceNames).map(([key, label]) => (
+                    <div key={key} className="flex items-center justify-between bg-bg-elevated rounded-md p-3">
+                      <div className="flex items-center gap-2">
+                        <Server size={16} className="text-text-muted" />
+                        <span className="text-body">{label}</span>
+                      </div>
+                      {servicesChecking ? (
+                        <Loader2 size={14} className="animate-spin text-text-muted" />
+                      ) : servicesHealth[key] !== undefined ? (
+                        <Badge variant={servicesHealth[key] ? 'healthy' : 'warning'}>
+                          {servicesHealth[key] ? 'Ready' : 'Starting...'}
+                        </Badge>
+                      ) : (
+                        <Badge variant="default">Checking</Badge>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                <div className="flex gap-2">
+                  <Button onClick={checkServices} disabled={servicesChecking} variant="secondary">
+                    {servicesChecking ? <><Loader2 size={14} className="mr-1 animate-spin" /> Checking...</> : 'Refresh Status'}
+                  </Button>
+                  <Button onClick={autoConfigureServices} disabled={configuring}>
+                    {configuring ? <><Loader2 size={14} className="mr-1 animate-spin" /> Configuring...</> : 'Auto-Configure'}
+                  </Button>
+                </div>
+
+                {configResult && (
+                  <div className="bg-status-success/10 rounded-md p-3 text-body text-status-success">
+                    <Check size={16} className="inline mr-2" />
+                    Services configured! Prowlarr syncs indexers to Radarr/Sonarr, download clients are connected.
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Step 3: TMDB */}
+            {step === 3 && (
               <div className="space-y-5">
                 <h2 className="text-section-header">TMDB API Key</h2>
                 <p className="text-body text-text-secondary">
@@ -268,37 +342,6 @@ export function SetupWizardPage() {
               </div>
             )}
 
-            {/* Step 3: Paths */}
-            {step === 3 && (
-              <div className="space-y-5">
-                <h2 className="text-section-header">Media Paths</h2>
-                <p className="text-body text-text-secondary">
-                  These are set by your Docker volume mounts. The defaults match the docker-compose.yml.
-                </p>
-                <div className="space-y-3">
-                  {[
-                    { label: 'Movies', path: '/media/movies', desc: 'Downloaded movies (torrent/usenet)' },
-                    { label: 'TV Shows', path: '/media/tv', desc: 'Downloaded TV episodes (torrent/usenet)' },
-                    { label: 'IPTV VOD Movies', path: '/media/iptv-movies', desc: 'IPTV VOD movie strm files' },
-                    { label: 'IPTV VOD Shows', path: '/media/iptv-shows', desc: 'IPTV VOD TV show strm files' },
-                    { label: 'Recordings', path: '/media/recordings', desc: 'Live TV DVR recordings' },
-                    { label: 'Downloads', path: '/downloads', desc: 'Torrent/usenet staging (prioritizes usenet)' },
-                  ].map((item) => (
-                    <div key={item.path} className="bg-bg-elevated rounded-md p-3 flex items-center justify-between">
-                      <div>
-                        <span className="text-body font-medium">{item.label}</span>
-                        <p className="text-caption text-text-muted">{item.desc}</p>
-                      </div>
-                      <code className="text-caption bg-bg-deep px-2 py-1 rounded">{item.path}</code>
-                    </div>
-                  ))}
-                </div>
-                <p className="text-caption text-text-muted">
-                  Change these by editing docker-compose.yml volume mounts and restarting.
-                </p>
-              </div>
-            )}
-
             {/* Step 4: Complete */}
             {step === 4 && (
               <div className="text-center space-y-5">
@@ -307,14 +350,14 @@ export function SetupWizardPage() {
                 </div>
                 <h2 className="text-section-header">You're all set!</h2>
                 <p className="text-body text-text-secondary">
-                  MediaForge is configured and ready to go.
+                  MediaForge is configured. All backend services are wired together automatically.
                 </p>
                 <div className="bg-bg-elevated rounded-md p-4 text-left space-y-2 text-body text-text-secondary">
                   <p className="font-medium text-text-primary">Next steps:</p>
+                  <p>- Add indexers from the Indexers page (synced via Prowlarr)</p>
                   <p>- Browse and request movies/TV from the Discover page</p>
-                  <p>- Add indexers (torrent/usenet sources) from the Indexers page</p>
-                  <p>- Configure subtitle languages in Settings</p>
-                  <p>- Set up VPN for download protection (optional)</p>
+                  <p>- Configure VPN for download protection</p>
+                  <p>- Set up IPTV for live TV (optional)</p>
                 </div>
                 <Button onClick={finishSetup} disabled={completing} className="w-full" size="lg">
                   {completing ? <><Loader2 size={16} className="mr-2 animate-spin" /> Finishing...</> : 'Launch MediaForge'}

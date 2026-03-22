@@ -175,13 +175,8 @@ export function MoviesPage() {
     if (!selectedMovie) return
     setRequesting(true)
     try {
-      await api.post('/requests', {
-        type: 'movie',
+      await api.post('/movies', {
         tmdb_id: selectedMovie.tmdb_id ?? selectedMovie.id,
-        title: selectedMovie.title,
-        year: selectedMovie.year,
-        poster_url: selectedMovie.poster_url,
-        quality: requestQuality,
       })
       setRequestSuccess(true)
       setShowQualityForm(false)

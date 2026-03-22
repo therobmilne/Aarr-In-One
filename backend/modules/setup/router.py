@@ -1,4 +1,15 @@
-"""Setup wizard API — no auth required (only works before setup is complete)."""
+"""Setup wizard API — no auth required (only works before setup is complete).
+
+New architecture steps:
+1. Jellyfin Connection (enter URL + admin credentials)
+2. Wait for backend services + auto-configure cross-connections
+3. VPN configuration (optional — write .env for Gluetun)
+4. Indexers (add at least one via Prowlarr)
+5. IPTV (optional — configure Threadfin)
+6. Complete setup
+"""
+
+import asyncio
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,12 +20,12 @@ from backend.modules.setup.schemas import (
     CompleteSetupRequest,
     JellyfinSetupRequest,
     JellyfinSetupResponse,
-    PathsSetupRequest,
     SetupStatus,
     TMDBSetupRequest,
     TMDBSetupResponse,
     VPNSetupRequest,
 )
+from backend.services.auto_config import read_all_api_keys, run_auto_configuration, wait_for_all_services
 
 router = APIRouter(prefix="/setup", tags=["setup"])
 
@@ -36,7 +47,7 @@ async def get_setup_status():
         jellyfin_url=state.get("jellyfin_url", ""),
         has_admin_user=bool(state.get("admin_user_id")),
         has_tmdb_key=bool(state.get("tmdb_api_key")),
-        has_media_paths=True,  # Defaults always exist
+        has_media_paths=True,
         has_vpn=False,
     )
 
@@ -57,12 +68,10 @@ async def detect_jellyfin():
 
 @router.post("/jellyfin/connect", response_model=JellyfinSetupResponse)
 async def connect_jellyfin(body: JellyfinSetupRequest):
-    """Connect to Jellyfin with admin credentials. Creates API key automatically."""
+    """Connect to Jellyfin with admin credentials."""
     _require_setup_incomplete()
-
-    url = body.jellyfin_url or "http://jellyfin:8096"
+    url = body.jellyfin_url or "http://192.168.2.54:8096"
     result = await service.setup_jellyfin_connection(url, body.username, body.password)
-
     return JellyfinSetupResponse(
         success=result["success"],
         message=result["message"],
@@ -81,19 +90,58 @@ async def setup_tmdb(body: TMDBSetupRequest):
     return TMDBSetupResponse(success=result["success"], message=result["message"])
 
 
-@router.post("/paths")
-async def setup_paths(body: PathsSetupRequest):
-    """Configure media paths (uses Docker volume defaults)."""
+@router.post("/services/check")
+async def check_backend_services():
+    """Check which backend services are healthy (Step 2).
+
+    Returns status of each arr service. Called by the frontend to show
+    the 'Setting up backend services...' progress screen.
+    """
     _require_setup_incomplete()
-    # Paths are set via Docker volumes so we just acknowledge
-    return {"success": True, "message": "Paths configured"}
+    health = await wait_for_all_services()
+    keys = await read_all_api_keys()
+
+    return {
+        "services": health,
+        "api_keys_found": {k: bool(v) for k, v in keys.items()},
+        "all_healthy": all(health.values()),
+    }
+
+
+@router.post("/services/configure")
+async def auto_configure_services():
+    """Run auto-configuration to wire all backend services together (Step 2b).
+
+    This reads API keys from each service's config files and configures:
+    - Prowlarr → syncs indexers to Radarr and Sonarr
+    - Radarr → uses qBittorrent + SABnzbd as download clients
+    - Sonarr → uses qBittorrent + SABnzbd as download clients
+    - Root folders in Radarr (/media/movies) and Sonarr (/media/tv)
+    """
+    _require_setup_incomplete()
+    results = await run_auto_configuration()
+    return results
 
 
 @router.post("/vpn")
 async def setup_vpn(body: VPNSetupRequest):
-    """Configure VPN (optional step)."""
+    """Configure VPN (optional step — writes Gluetun .env)."""
     _require_setup_incomplete()
-    return {"success": True, "message": "VPN configuration saved", "enabled": body.enabled}
+    if not body.enabled:
+        return {"success": True, "message": "VPN skipped"}
+
+    from pathlib import Path
+
+    env_path = Path("/config/mediaforge/.env")
+    try:
+        env_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(env_path, "w") as f:
+            f.write(f"VPN_PROVIDER={body.provider}\n")
+            f.write(f"VPN_TYPE={body.vpn_type}\n")
+    except OSError:
+        pass
+
+    return {"success": True, "message": "VPN configuration saved", "enabled": True}
 
 
 @router.post("/complete")
