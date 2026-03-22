@@ -10,6 +10,7 @@ from backend.modules.subtitles import service
 from backend.modules.subtitles.schemas import (
     SubtitleProfileCreate,
     SubtitleProfileResponse,
+    SubtitleProfileUpdate,
     SubtitleSearchResult,
 )
 
@@ -46,6 +47,28 @@ async def create_profile(
     user: User = Depends(require_admin),
 ):
     profile = await service.create_profile(body, db)
+    return SubtitleProfileResponse(
+        id=profile.id,
+        name=profile.name,
+        languages=json.loads(profile.languages),
+        min_score=profile.min_score,
+        providers=json.loads(profile.providers),
+        hearing_impaired=profile.hearing_impaired,
+        auto_download=profile.auto_download,
+        auto_upgrade=profile.auto_upgrade,
+        preferred_format=profile.preferred_format,
+        is_default=profile.is_default,
+    )
+
+
+@router.put("/profiles/{profile_id}", response_model=SubtitleProfileResponse)
+async def update_profile(
+    profile_id: int,
+    body: SubtitleProfileUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_admin),
+):
+    profile = await service.update_profile(profile_id, body, db)
     return SubtitleProfileResponse(
         id=profile.id,
         name=profile.name,

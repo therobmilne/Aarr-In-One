@@ -28,6 +28,18 @@ class SubtitleProfileResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class SubtitleProfileUpdate(BaseModel):
+    name: str | None = None
+    languages: list[str] | None = None
+    min_score: int | None = None
+    providers: list[str] | None = None
+    hearing_impaired: bool | None = None
+    auto_download: bool | None = None
+    auto_upgrade: bool | None = None
+    preferred_format: str | None = None
+    is_default: bool | None = None
+
+
 class SubtitleSearchResult(BaseModel):
     provider: str
     title: str

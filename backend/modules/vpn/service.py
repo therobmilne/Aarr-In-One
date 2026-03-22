@@ -1,7 +1,6 @@
 """VPN engine: WireGuard/OpenVPN subprocess management, kill switch, port forwarding."""
 
 import asyncio
-import json
 import subprocess
 import time
 from pathlib import Path
@@ -14,6 +13,8 @@ from backend.modules.vpn.schemas import VPNStatusResponse
 
 logger = get_logger("vpn")
 
+VPN_CONFIG_DIR = Path("/config/vpn")
+
 
 class VPNEngine:
     def __init__(self):
@@ -23,13 +24,16 @@ class VPNEngine:
         self._forwarded_port: int | None = None
         self._start_time: float | None = None
         self._kill_switch_active = False
+        self._kill_switch_enabled = True
+        self._active_vpn_type: str | None = None
+        self._active_config_path: str | None = None
 
     @property
     def is_connected(self) -> bool:
         return self._connected
 
     async def connect(self) -> bool:
-        """Start VPN connection."""
+        """Start VPN connection using runtime settings."""
         vpn_type = settings.VPN_TYPE
         config_path = settings.VPN_CONFIG_PATH
 
@@ -46,8 +50,14 @@ class VPNEngine:
                 logger.error("unknown_vpn_type", type=vpn_type)
                 return False
 
-            # Apply kill switch
-            await self._apply_kill_switch()
+            # Store active connection info for disconnect
+            self._active_vpn_type = vpn_type
+            self._active_config_path = config_path
+
+            # Apply kill switch if enabled
+            if self._kill_switch_enabled:
+                interface = "wg0" if vpn_type == "wireguard" else "tun0"
+                await self._apply_kill_switch(interface)
 
             # Check connectivity
             await asyncio.sleep(3)
@@ -65,9 +75,12 @@ class VPNEngine:
     async def disconnect(self) -> bool:
         """Stop VPN connection."""
         try:
-            if settings.VPN_TYPE == "wireguard":
+            vpn_type = self._active_vpn_type or settings.VPN_TYPE
+            config_path = self._active_config_path or settings.VPN_CONFIG_PATH
+
+            if vpn_type == "wireguard":
                 proc = await asyncio.create_subprocess_exec(
-                    "wg-quick", "down", settings.VPN_CONFIG_PATH,
+                    "wg-quick", "down", config_path,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                 )
@@ -81,6 +94,8 @@ class VPNEngine:
             self._connected = False
             self._start_time = None
             self._public_ip = None
+            self._active_vpn_type = None
+            self._active_config_path = None
             logger.info("vpn_disconnected")
             return True
         except Exception as e:
@@ -98,20 +113,32 @@ class VPNEngine:
             raise RuntimeError(f"wg-quick failed: {stderr.decode()}")
 
     async def _start_openvpn(self, config_path: str) -> None:
-        self._process = await asyncio.create_subprocess_exec(
+        cmd = [
             "openvpn", "--config", config_path,
             "--daemon", "--log", "/config/logs/openvpn.log",
+        ]
+
+        # If auth file exists alongside the config, reference it
+        auth_path = VPN_CONFIG_DIR / "auth.txt"
+        if auth_path.exists():
+            # Only add if not already in the config file
+            config_content = Path(config_path).read_text()
+            if "auth-user-pass" not in config_content:
+                cmd.extend(["--auth-user-pass", str(auth_path)])
+
+        self._process = await asyncio.create_subprocess_exec(
+            *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
 
-    async def _apply_kill_switch(self) -> None:
+    async def _apply_kill_switch(self, interface: str = "tun0") -> None:
         """Apply iptables rules to prevent traffic leaking outside VPN tunnel."""
         rules = [
             # Allow loopback
             ["iptables", "-A", "OUTPUT", "-o", "lo", "-j", "ACCEPT"],
             # Allow VPN tunnel
-            ["iptables", "-A", "OUTPUT", "-o", "tun0", "-j", "ACCEPT"],
+            ["iptables", "-A", "OUTPUT", "-o", interface, "-j", "ACCEPT"],
             # Allow LAN traffic (bypass VPN for API communication)
             ["iptables", "-A", "OUTPUT", "-d", "192.168.0.0/16", "-j", "ACCEPT"],
             ["iptables", "-A", "OUTPUT", "-d", "10.0.0.0/8", "-j", "ACCEPT"],
@@ -165,10 +192,11 @@ class VPNEngine:
         if not self._connected:
             return False
 
-        # Check tun0 exists
+        # Check interface exists (tun0 for OpenVPN, wg0 for WireGuard)
+        interface = "wg0" if self._active_vpn_type == "wireguard" else "tun0"
         try:
             result = subprocess.run(
-                ["ip", "link", "show", "tun0"],
+                ["ip", "link", "show", interface],
                 capture_output=True, timeout=5,
             )
             if result.returncode != 0:
@@ -206,19 +234,27 @@ class VPNEngine:
 
         return self._forwarded_port
 
+    def set_kill_switch_enabled(self, enabled: bool) -> None:
+        """Set whether the kill switch should be applied on connect."""
+        self._kill_switch_enabled = enabled
+
     def get_status(self) -> VPNStatusResponse:
         uptime = None
         if self._start_time:
             uptime = time.monotonic() - self._start_time
 
+        vpn_type = self._active_vpn_type or settings.VPN_TYPE
+        interface = "wg0" if vpn_type == "wireguard" else "tun0"
+
         return VPNStatusResponse(
             connected=self._connected,
             provider=settings.VPN_PROVIDER,
-            vpn_type=settings.VPN_TYPE,
+            vpn_type=vpn_type,
             public_ip=self._public_ip,
             forwarded_port=self._forwarded_port,
             kill_switch_active=self._kill_switch_active,
             uptime_seconds=uptime,
+            interface=interface,
         )
 
 

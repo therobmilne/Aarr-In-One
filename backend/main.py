@@ -26,6 +26,7 @@ from backend.modules.livetv.router import router as livetv_router
 from backend.modules.movies.router import router as movies_router
 from backend.modules.series.router import router as series_router
 from backend.modules.subtitles.router import router as subtitles_router
+from backend.modules.iptv.router import router as iptv_router
 from backend.modules.vpn.router import router as vpn_router
 from backend.system.router import router as system_router
 from backend.websocket_manager import manager
@@ -136,6 +137,7 @@ def create_app() -> FastAPI:
     app.include_router(indexers_router, prefix=api_prefix)
     app.include_router(downloads_router, prefix=api_prefix)
     app.include_router(subtitles_router, prefix=api_prefix)
+    app.include_router(iptv_router, prefix=api_prefix)
     app.include_router(livetv_router, prefix=api_prefix)
     app.include_router(vpn_router, prefix=api_prefix)
     app.include_router(system_router, prefix=api_prefix)

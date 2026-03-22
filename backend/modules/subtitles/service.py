@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.exceptions import NotFoundError
 from backend.logging_config import get_logger
 from backend.models.subtitle import SubtitleProfile
-from backend.modules.subtitles.schemas import SubtitleProfileCreate, SubtitleSearchResult
+from backend.modules.subtitles.schemas import SubtitleProfileCreate, SubtitleProfileUpdate, SubtitleSearchResult
 
 logger = get_logger("subtitles")
 
@@ -51,6 +51,30 @@ async def get_profile(profile_id: int, db: AsyncSession) -> SubtitleProfile:
     profile = result.scalar_one_or_none()
     if not profile:
         raise NotFoundError("SubtitleProfile", profile_id)
+    return profile
+
+
+async def update_profile(profile_id: int, data: SubtitleProfileUpdate, db: AsyncSession) -> SubtitleProfile:
+    profile = await get_profile(profile_id, db)
+    if data.name is not None:
+        profile.name = data.name
+    if data.languages is not None:
+        profile.languages = json.dumps(data.languages)
+    if data.min_score is not None:
+        profile.min_score = data.min_score
+    if data.providers is not None:
+        profile.providers = json.dumps(data.providers)
+    if data.hearing_impaired is not None:
+        profile.hearing_impaired = data.hearing_impaired
+    if data.auto_download is not None:
+        profile.auto_download = data.auto_download
+    if data.auto_upgrade is not None:
+        profile.auto_upgrade = data.auto_upgrade
+    if data.preferred_format is not None:
+        profile.preferred_format = data.preferred_format
+    if data.is_default is not None:
+        profile.is_default = data.is_default
+    await db.flush()
     return profile
 
 
