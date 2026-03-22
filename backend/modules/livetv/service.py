@@ -192,3 +192,41 @@ def generate_m3u_output(channels: list[IPTVChannel]) -> str:
         lines.append(f'#EXTINF:-1 {attr_str},{ch.name}')
         lines.append(ch.stream_url)
     return "\n".join(lines)
+
+
+def generate_xmltv_output(channels: list[IPTVChannel], epg_entries: list[EPGEntry]) -> str:
+    """Generate XMLTV XML output for Jellyfin EPG."""
+    from xml.etree.ElementTree import Element, SubElement, tostring
+
+    tv = Element("tv", attrib={"generator-info-name": "MediaForge"})
+
+    # Channel definitions
+    for ch in channels:
+        if not ch.enabled or not ch.epg_id:
+            continue
+        chan_el = SubElement(tv, "channel", id=ch.epg_id)
+        dn = SubElement(chan_el, "display-name")
+        dn.text = ch.name
+        if ch.logo_url:
+            SubElement(chan_el, "icon", src=ch.logo_url)
+
+    # Programme entries
+    for entry in epg_entries:
+        prog = SubElement(
+            tv, "programme",
+            start=entry.start_time,
+            stop=entry.end_time,
+            channel=entry.channel_epg_id,
+        )
+        title_el = SubElement(prog, "title")
+        title_el.text = entry.title
+        if entry.description:
+            desc_el = SubElement(prog, "desc")
+            desc_el.text = entry.description
+        if entry.category:
+            cat_el = SubElement(prog, "category")
+            cat_el.text = entry.category
+        if entry.icon_url:
+            SubElement(prog, "icon", src=entry.icon_url)
+
+    return '<?xml version="1.0" encoding="UTF-8"?>\n' + tostring(tv, encoding="unicode")

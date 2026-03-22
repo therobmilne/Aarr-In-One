@@ -4,6 +4,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.exceptions import NotFoundError
 from backend.logging_config import get_logger
 from backend.models.download import Download, DownloadStatus, DownloadType
+from backend.models.download import DownloadCategory
+from backend.modules.downloads.release_parser import detect_category
 from backend.modules.downloads.schemas import DownloadCreate, DownloadStats
 from backend.modules.downloads.torrent_client import torrent_client
 from backend.modules.downloads.usenet_client import usenet_client
@@ -13,11 +15,17 @@ logger = get_logger("downloads")
 
 
 async def add_download(data: DownloadCreate, db: AsyncSession) -> Download:
+    # Auto-detect category from release name if not specified
+    category = data.category
+    if category == DownloadCategory.OTHER:
+        detected = detect_category(data.title)
+        category = DownloadCategory.MOVIES if detected == "movies" else DownloadCategory.TV
+
     download = Download(
         type=data.type,
         title=data.title,
         download_url=data.download_url,
-        category=data.category,
+        category=category,
         movie_id=data.movie_id,
         episode_id=data.episode_id,
         status=DownloadStatus.QUEUED,

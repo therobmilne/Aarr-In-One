@@ -87,6 +87,15 @@ async def m3u_output(db: AsyncSession = Depends(get_db)):
     return PlainTextResponse(content, media_type="audio/x-mpegurl")
 
 
+@router.get("/epg.xml")
+async def epg_xml(db: AsyncSession = Depends(get_db)):
+    """Serve XMLTV EPG data for Jellyfin."""
+    entries = await service.get_epg(db)
+    channels = await service.list_channels(db, enabled=True)
+    xml = service.generate_xmltv_output(channels, entries)
+    return PlainTextResponse(xml, media_type="application/xml")
+
+
 # --- EPG ---
 
 @router.get("/epg", response_model=list[EPGEntryResponse])
