@@ -34,8 +34,7 @@ services:
       - PUID=1000
       - PGID=1000
       - JELLYFIN_URL=http://jellyfin:8096
-      - JELLYFIN_INTERNAL_URL=http://jellyfin:8096
-      - LOG_LEVEL=INFO
+      - LOG_LEVEL=info
     volumes:
       - ./config:/config
       - /mnt/media:/media

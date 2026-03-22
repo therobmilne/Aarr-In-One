@@ -277,10 +277,12 @@ export function SetupWizardPage() {
                 </p>
                 <div className="space-y-3">
                   {[
-                    { label: 'Media Library', path: '/media', desc: 'Shared with Jellyfin' },
-                    { label: 'Movies', path: '/media/movies', desc: 'Imported movies' },
-                    { label: 'TV Shows', path: '/media/tv', desc: 'Imported episodes' },
-                    { label: 'Downloads', path: '/downloads', desc: 'Torrent/usenet staging' },
+                    { label: 'Movies', path: '/media/movies', desc: 'Downloaded movies (torrent/usenet)' },
+                    { label: 'TV Shows', path: '/media/tv', desc: 'Downloaded TV episodes (torrent/usenet)' },
+                    { label: 'IPTV VOD Movies', path: '/media/iptv-movies', desc: 'IPTV VOD movie strm files' },
+                    { label: 'IPTV VOD Shows', path: '/media/iptv-shows', desc: 'IPTV VOD TV show strm files' },
+                    { label: 'Recordings', path: '/media/recordings', desc: 'Live TV DVR recordings' },
+                    { label: 'Downloads', path: '/downloads', desc: 'Torrent/usenet staging (prioritizes usenet)' },
                   ].map((item) => (
                     <div key={item.path} className="bg-bg-elevated rounded-md p-3 flex items-center justify-between">
                       <div>

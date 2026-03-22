@@ -72,6 +72,8 @@ def ensure_directories() -> None:
         settings.download_path / "complete",
         settings.media_path / "movies",
         settings.media_path / "tv",
+        settings.media_path / "iptv-movies",
+        settings.media_path / "iptv-shows",
         settings.media_path / "recordings",
     ]
     for d in dirs:
