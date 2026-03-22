@@ -111,10 +111,21 @@ async def save_vpn_config(
     await settings_service.set_setting(db, "vpn_kill_switch", creds.kill_switch, "vpn")
     await settings_service.set_setting(db, "vpn_port_forwarding", creds.port_forwarding, "vpn")
 
-    # Ensure the config directory exists
-    VPN_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-
+    # Write config files to disk (only in Docker where /config exists)
     files_written = []
+    try:
+        VPN_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        # Not in Docker or filesystem is read-only — settings are saved to DB above
+        return {
+            "status": "saved",
+            "connection_type": creds.connection_type,
+            "provider": creds.provider,
+            "files_written": [],
+            "note": "Config saved to database. Config files will be written when running in Docker.",
+            "kill_switch": creds.kill_switch,
+            "port_forwarding": creds.port_forwarding,
+        }
 
     if creds.connection_type == "wireguard":
         if creds.wireguard_config:

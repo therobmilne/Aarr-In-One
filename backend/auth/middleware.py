@@ -12,8 +12,27 @@ async def get_current_user(
     x_api_key: str = Header(None, alias="X-Api-Key"),
     db: AsyncSession = Depends(get_db),
 ) -> User:
-    """Extract current user from JWT token or API key."""
+    """Extract current user from JWT token or API key.
+
+    During initial setup (no users in DB), returns a temporary admin user
+    so that configuration endpoints are accessible before Jellyfin auth.
+    """
     from backend.config import settings
+
+    # Check if ANY users exist — if not, we're in setup mode
+    result = await db.execute(select(User).limit(1))
+    any_user = result.scalar_one_or_none()
+    if any_user is None:
+        # No users yet — return a temporary admin for setup
+        return User(
+            id=0,
+            jellyfin_id="setup",
+            username="setup-admin",
+            display_name="Setup Admin",
+            role=UserRole.ADMIN,
+            is_active=True,
+            auto_approve=True,
+        )
 
     # API key auth
     if x_api_key:
