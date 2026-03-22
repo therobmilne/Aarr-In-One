@@ -25,15 +25,7 @@ interface UsenetServer {
   testResult?: string
 }
 
-interface ScanStatus {
-  running: boolean
-  phase: string
-  movies_found: number
-  series_found: number
-  live_channels_found: number
-  skipped: number
-  progress: number
-}
+// Scan status is tracked via individual state variables in IptvTab
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -57,6 +49,19 @@ function GeneralTab() {
   const [tmdbKey, setTmdbKey] = useState('')
   const [saving, setSaving] = useState(false)
   const [testResult, setTestResult] = useState('')
+
+  // Load saved settings
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const { data } = await api.get('/system/settings')
+        if (data.jellyfin_url) setJellyfinUrl(data.jellyfin_url)
+        if (data.jellyfin_api_key) setJellyfinKey(data.jellyfin_api_key)
+        if (data.tmdb_api_key) setTmdbKey(data.tmdb_api_key)
+      } catch { /* */ }
+    }
+    load()
+  }, [])
 
   const handleSave = async () => {
     setSaving(true)
@@ -175,10 +180,17 @@ function IptvTab() {
   const [serverUrl, setServerUrl] = useState('')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [saveMsg, setSaveMsg] = useState('')
   const [testResult, setTestResult] = useState<string | null>(null)
   const [testLoading, setTestLoading] = useState(false)
   const [scanning, setScanning] = useState(false)
-  const [scanStatus, setScanStatus] = useState<ScanStatus | null>(null)
+  const [scanPhase, setScanPhase] = useState('')
+  const [scanFound, setScanFound] = useState(0)
+  const [scanProcessed, setScanProcessed] = useState(0)
+  const [scanTotal, setScanTotal] = useState(0)
+  const [scanSkipped, setScanSkipped] = useState(0)
+  const [scanProgress, setScanProgress] = useState(0)
   const [scanComplete, setScanComplete] = useState(false)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
@@ -189,50 +201,117 @@ function IptvTab() {
     }
   }, [])
 
+  // Load saved credentials on mount
   useEffect(() => {
+    const loadCreds = async () => {
+      try {
+        const { data } = await api.get('/iptv/credentials')
+        if (data.configured) {
+          setServerUrl(data.server_url || '')
+          setUsername(data.username || '')
+          // Don't load password - it's masked
+        }
+      } catch { /* not saved yet */ }
+    }
+    loadCreds()
     return () => stopPolling()
   }, [stopPolling])
+
+  const handleSaveCredentials = async () => {
+    setSaving(true)
+    setSaveMsg('')
+    try {
+      await api.put('/iptv/credentials', {
+        server_url: serverUrl,
+        username,
+        password,
+      })
+      setSaveMsg('Saved!')
+      setTimeout(() => setSaveMsg(''), 3000)
+    } catch {
+      setSaveMsg('Failed to save')
+    } finally {
+      setSaving(false)
+    }
+  }
 
   const handleTestConnection = async () => {
     setTestLoading(true)
     setTestResult(null)
+    // Save credentials first
+    try {
+      await api.put('/iptv/credentials', {
+        server_url: serverUrl,
+        username,
+        password,
+      })
+    } catch { /* continue with test anyway */ }
     try {
       const { data } = await api.post('/iptv/test', {
         server_url: serverUrl,
         username,
         password,
       })
-      setTestResult(
-        `Connection successful! Found ${formatNumber(data.movies ?? 0)} movies, ${formatNumber(data.series ?? 0)} series, ${formatNumber(data.live_channels ?? 0)} live channels.`
-      )
-    } catch {
-      setTestResult('Connection failed. Check your credentials and server URL.')
+      if (data.success) {
+        setTestResult(
+          `Connected! Found ${formatNumber(data.vod_count || 0)} movies, ${formatNumber(data.series_count || 0)} series, ${formatNumber(data.live_count || 0)} live channels.`
+        )
+      } else {
+        setTestResult(`Failed: ${data.message}`)
+      }
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
+      setTestResult(msg || 'Connection failed. Check your credentials and server URL.')
     } finally {
       setTestLoading(false)
     }
   }
 
   const handleScanLibrary = async () => {
+    // Save credentials first
+    try {
+      await api.put('/iptv/credentials', {
+        server_url: serverUrl,
+        username,
+        password,
+      })
+    } catch { /* */ }
+
     setScanning(true)
     setScanComplete(false)
-    setScanStatus(null)
+    setScanPhase('Starting...')
+    setScanFound(0)
+    setScanProcessed(0)
+    setScanTotal(0)
+    setScanSkipped(0)
+    setScanProgress(0)
+
     try {
       await api.post('/iptv/scan')
-      // start polling
+      // Poll for status
       pollRef.current = setInterval(async () => {
         try {
           const { data } = await api.get('/iptv/scan/status')
-          setScanStatus(data)
-          if (!data.running) {
+          setScanPhase(data.phase || '')
+          setScanFound(data.found || 0)
+          setScanProcessed(data.processed || 0)
+          setScanTotal(data.total || 0)
+          setScanSkipped(data.skipped || 0)
+          // Calculate progress percentage
+          const pct = data.total > 0 ? Math.round((data.processed / data.total) * 100) : 0
+          setScanProgress(pct)
+
+          if (data.is_complete && data.phase !== 'idle') {
             stopPolling()
             setScanning(false)
             setScanComplete(true)
+            setScanProgress(100)
           }
         } catch {
           stopPolling()
           setScanning(false)
         }
-      }, 2000)
+      }, 1500)
     } catch {
       setScanning(false)
     }
@@ -274,49 +353,46 @@ function IptvTab() {
             />
           </div>
           <div className="flex gap-2 flex-wrap">
-            <Button variant="secondary" onClick={handleTestConnection} disabled={testLoading}>
+            <Button onClick={handleSaveCredentials} disabled={saving || !serverUrl || !username}>
+              {saving ? 'Saving...' : 'Save'}
+            </Button>
+            <Button variant="secondary" onClick={handleTestConnection} disabled={testLoading || !serverUrl || !username || !password}>
               {testLoading ? 'Testing...' : 'Test Connection'}
             </Button>
-            <Button onClick={handleScanLibrary} disabled={scanning}>
+            <Button variant="secondary" onClick={handleScanLibrary} disabled={scanning || !serverUrl || !username}>
               {scanning ? 'Scanning...' : 'Scan Library'}
             </Button>
+            {saveMsg && <span className="text-body text-status-success">{saveMsg}</span>}
           </div>
           {testResult && (
-            <p className="text-body text-text-secondary">{testResult}</p>
+            <p className={`text-body ${testResult.startsWith('Connected') ? 'text-status-success' : 'text-status-error'}`}>
+              {testResult}
+            </p>
           )}
         </CardContent>
       </Card>
 
       {/* Scan Progress */}
-      {(scanning || scanStatus) && (
+      {(scanning || scanComplete) && (
         <Card>
           <CardHeader>
             <CardTitle>Scan Progress</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            {scanStatus && (
-              <>
-                <div className="flex items-center gap-2">
-                  <Badge variant={scanStatus.running ? 'downloading' : 'success'}>
-                    {scanStatus.running ? 'Scanning' : 'Complete'}
-                  </Badge>
-                  <span className="text-body text-text-primary">{scanStatus.phase}</span>
-                </div>
-                <p className="text-body text-text-secondary">
-                  Found {formatNumber(scanStatus.movies_found)} movies,{' '}
-                  {formatNumber(scanStatus.series_found)} TV shows,{' '}
-                  {formatNumber(scanStatus.live_channels_found)} live channels
-                </p>
-                <Progress value={scanStatus.progress} />
-                <p className="text-caption text-text-muted">
-                  {scanStatus.progress}% complete &middot; Skipped{' '}
-                  {formatNumber(scanStatus.skipped)} existing items
-                </p>
-              </>
-            )}
-            {!scanStatus && scanning && (
-              <p className="text-body text-text-secondary">Starting scan...</p>
-            )}
+            <div className="flex items-center gap-2">
+              <Badge variant={scanning ? 'downloading' : 'available'}>
+                {scanning ? 'Scanning' : 'Complete'}
+              </Badge>
+              <span className="text-body text-text-primary">{scanPhase}</span>
+            </div>
+            <p className="text-body text-text-secondary">
+              Found {formatNumber(scanFound)} items &middot; Processed {formatNumber(scanProcessed)}/{formatNumber(scanTotal)}
+            </p>
+            <Progress value={scanProgress} />
+            <p className="text-caption text-text-muted">
+              {scanProgress}% complete
+              {scanSkipped > 0 && <> &middot; Skipped {formatNumber(scanSkipped)} existing items</>}
+            </p>
           </CardContent>
         </Card>
       )}
@@ -376,6 +452,20 @@ function DownloadsTab() {
   const [minSeeders, setMinSeeders] = useState(5)
   const [saving, setSaving] = useState(false)
   const [saveResult, setSaveResult] = useState('')
+
+  // Load saved settings
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const { data } = await api.get('/system/settings')
+        if (data.default_movie_quality) setMovieQuality(data.default_movie_quality)
+        if (data.default_tv_quality) setTvQuality(data.default_tv_quality)
+        if (data.min_seeders != null) setMinSeeders(data.min_seeders)
+        if (data.minimum_seeders != null) setMinSeeders(data.minimum_seeders)
+      } catch { /* */ }
+    }
+    load()
+  }, [])
 
   const handleSave = async () => {
     setSaving(true)
@@ -479,6 +569,20 @@ function UsenetTab() {
   const [servers, setServers] = useState<UsenetServer[]>([emptyServer()])
   const [saving, setSaving] = useState(false)
   const [saveResult, setSaveResult] = useState('')
+
+  // Load saved servers
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const { data } = await api.get('/system/settings?category=usenet')
+        const saved = data.usenet_servers
+        if (Array.isArray(saved) && saved.length > 0) {
+          setServers(saved.map((s: Omit<UsenetServer, 'id'>) => ({ ...s, id: generateId() })))
+        }
+      } catch { /* */ }
+    }
+    load()
+  }, [])
 
   const updateServer = (id: string, patch: Partial<UsenetServer>) => {
     setServers((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)))
