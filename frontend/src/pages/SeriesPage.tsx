@@ -27,7 +27,7 @@ export function SeriesPage() {
     const fetchSeries = async () => {
       try {
         const { data } = await api.get('/series')
-        setSeries(data)
+        setSeries(Array.isArray(data) ? data : [])
       } catch {
         // Not ready
       } finally {

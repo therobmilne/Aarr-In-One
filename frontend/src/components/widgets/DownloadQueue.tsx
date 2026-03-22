@@ -23,7 +23,7 @@ export function DownloadQueue() {
     const fetchDownloads = async () => {
       try {
         const { data } = await api.get('/downloads', { params: { limit: 5 } })
-        setDownloads(data)
+        setDownloads(Array.isArray(data) ? data : [])
       } catch {
         // API not available yet
       }

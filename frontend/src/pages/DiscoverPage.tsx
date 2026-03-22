@@ -30,7 +30,7 @@ export function DiscoverPage() {
     const fetchTrending = async () => {
       try {
         const { data } = await api.get('/discover/trending')
-        setTrending(data)
+        setTrending(Array.isArray(data) ? data : [])
       } catch {
         // TMDB not configured
       }
@@ -50,7 +50,7 @@ export function DiscoverPage() {
     setLoading(true)
     try {
       const { data } = await api.get('/discover/search', { params: { q } })
-      setResults(data)
+      setResults(Array.isArray(data) ? data : [])
     } catch {
       setResults([])
     } finally {

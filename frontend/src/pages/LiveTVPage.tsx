@@ -25,7 +25,7 @@ export function LiveTVPage() {
     const fetchChannels = async () => {
       try {
         const { data } = await api.get('/livetv/channels')
-        setChannels(data)
+        setChannels(Array.isArray(data) ? data : [])
       } catch {
         // Not ready
       } finally {

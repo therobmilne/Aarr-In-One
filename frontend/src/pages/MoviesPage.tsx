@@ -30,7 +30,7 @@ export function MoviesPage() {
     const fetchMovies = async () => {
       try {
         const { data } = await api.get('/movies')
-        setMovies(data)
+        setMovies(Array.isArray(data) ? data : [])
       } catch {
         // Not ready
       } finally {

@@ -28,7 +28,7 @@ export function IndexersPage() {
   const fetchIndexers = async () => {
     try {
       const { data } = await api.get('/indexers')
-      setIndexers(data)
+      setIndexers(Array.isArray(data) ? data : [])
     } catch {
       // Not ready
     } finally {

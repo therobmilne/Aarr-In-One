@@ -34,7 +34,7 @@ export function DownloadsPage() {
   const fetchDownloads = async () => {
     try {
       const { data } = await api.get('/downloads')
-      setDownloads(data)
+      setDownloads(Array.isArray(data) ? data : [])
     } catch {
       // Not ready
     } finally {

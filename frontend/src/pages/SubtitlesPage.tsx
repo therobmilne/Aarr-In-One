@@ -26,7 +26,7 @@ export function SubtitlesPage() {
     const fetch = async () => {
       try {
         const { data } = await api.get('/subtitles/profiles')
-        setProfiles(data)
+        setProfiles(Array.isArray(data) ? data : [])
       } catch {
         // Not ready
       } finally {
