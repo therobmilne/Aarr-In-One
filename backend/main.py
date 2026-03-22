@@ -165,37 +165,32 @@ def create_app() -> FastAPI:
         except WebSocketDisconnect:
             await manager.disconnect(websocket, user_id)
 
-    # Serve frontend static files
+    # Serve frontend (SPA with client-side routing)
     frontend_dist = Path(__file__).parent.parent / "frontend" / "dist"
     if frontend_dist.exists() and (frontend_dist / "index.html").exists():
-        app.mount("/", StaticFiles(directory=str(frontend_dist), html=True), name="frontend")
-    else:
-        # Fallback: serve a basic HTML page that redirects to API docs
-        from fastapi.responses import HTMLResponse
+        # Serve static assets (js, css, images)
+        app.mount("/assets", StaticFiles(directory=str(frontend_dist / "assets")), name="static-assets")
 
-        @app.get("/", response_class=HTMLResponse)
-        async def root():
-            return """<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="UTF-8"><title>MediaForge</title>
-<style>
-body{background:#0a0a0f;color:#f0f0f5;font-family:Inter,-apple-system,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}
-.c{text-align:center;max-width:500px;padding:2rem}
-h1{color:#6366f1;font-size:2rem;margin-bottom:.5rem}
-p{color:#8888a0;line-height:1.6}
-a{color:#818cf8;text-decoration:none}
-a:hover{text-decoration:underline}
-.status{background:#12121a;border:1px solid #1a1a28;border-radius:10px;padding:1.5rem;margin-top:1.5rem}
-</style></head>
-<body><div class="c">
-<h1>MediaForge</h1>
-<p>The backend is running. The frontend is building or hasn't been built yet.</p>
-<div class="status">
-<p><a href="/api/docs">API Documentation</a></p>
-<p><a href="/api/v1/system/health">Health Check</a></p>
-<p><a href="/api/v1/setup/status">Setup Status</a></p>
-</div>
-</div></body></html>"""
+        # Serve other static files at root (favicon, logo, etc)
+        from fastapi.responses import FileResponse
+
+        index_html = frontend_dist / "index.html"
+
+        @app.get("/mediaforge-logo.svg")
+        async def logo():
+            logo_path = frontend_dist / "mediaforge-logo.svg"
+            if logo_path.exists():
+                return FileResponse(str(logo_path))
+
+        # SPA catch-all: serve index.html for any non-API route
+        @app.get("/{path:path}")
+        async def spa_catch_all(path: str):
+            # If the file exists in dist, serve it directly
+            file_path = frontend_dist / path
+            if file_path.is_file():
+                return FileResponse(str(file_path))
+            # Otherwise serve index.html (React Router handles the route)
+            return FileResponse(str(index_html))
 
     return app
 
